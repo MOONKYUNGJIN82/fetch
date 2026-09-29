@@ -1,12 +1,28 @@
 name: Fetch macOS preview
 on:
   workflow_dispatch:
+    inputs:
+      signed:
+        description: 'Build Developer ID signed and Apple notarized DMGs'
+        type: boolean
+        required: true
+        default: false
   push:
+    branches: [macos-preview]
+  pull_request:
     branches: [macos-preview]
 permissions:
   contents: read
 jobs:
   build:
+    environment:
+      name: ${{ inputs.signed && 'fetch-macos-signing' || 'fetch-macos-preview' }}
+    env:
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
     strategy:
       fail-fast: false
       matrix:
@@ -16,7 +32,7 @@ jobs:
           - runner: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,13 +45,17 @@ jobs:
           python -m unittest discover -s tests -p 'test_media_downloader.py'
           python -m unittest discover -s tests -p 'test_instagram_downloads.py'
           python -m unittest discover -s tests -p 'test_macos_support.py'
+          python -m unittest discover -s tests -p 'test_macos_signing.py'
+      - name: Prepare KALLOS signing keychain
+        if: github.event_name == 'workflow_dispatch' && inputs.signed
+        run: python packaging/prepare_macos_signing.py
       - name: Build and test app
         env:
           MACOSX_DEPLOYMENT_TARGET: '13.0'
         run: python packaging/build_fetch_macos.py
       - uses: actions/upload-artifact@v4
         with:
-          name: Fetch-macOS-${{ matrix.arch }}-preview
+          name: Fetch-macOS-${{ matrix.arch }}-${{ inputs.signed && 'signed' || 'preview' }}
           path: |
             release/macos/*
             build/macos/Fetch-ui.png

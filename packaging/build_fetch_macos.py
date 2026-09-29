@@ -17,6 +17,24 @@ from app_config import APP_VERSION
 def run(*args, **kwargs):
     subprocess.run([str(x) for x in args], cwd=ROOT, check=True, **kwargs)
 
+def notarize(path, staple=True):
+    key = os.environ.get('APPLE_API_KEY')
+    key_id = os.environ.get('APPLE_API_KEY_ID')
+    issuer = os.environ.get('APPLE_API_ISSUER')
+    if not all((key, key_id, issuer)):
+        raise RuntimeError('Signed distribution requires Apple notarization credentials')
+    result = subprocess.run([
+        'xcrun', 'notarytool', 'submit', str(path), '--key', key,
+        '--key-id', key_id, '--issuer', issuer, '--wait', '--output-format', 'json'
+    ], cwd=ROOT, check=True, capture_output=True, text=True)
+    status = json.loads(result.stdout).get('status')
+    if status != 'Accepted':
+        raise RuntimeError(f'Apple notarization failed: {status}')
+    if staple:
+        run('xcrun', 'stapler', 'staple', path)
+        run('xcrun', 'stapler', 'validate', path)
+
+
 def build():
     if sys.platform != 'darwin':
         raise SystemExit('Mac packages must be built and tested on macOS.')
@@ -54,6 +72,15 @@ def build():
     run(executable, '--self-test')
     run(executable, '--smoke-test', work / 'Fetch-ui.png')
     run('codesign', '--verify', '--deep', '--strict', app)
+    signed = bool(os.environ.get('MAC_SIGN_IDENTITY'))
+    if signed:
+        archive = work / 'Fetch-notarization.zip'
+        run('ditto', '-c', '-k', '--keepParent', app, archive)
+        notarize(archive, staple=False)
+        # The ticket is stapled to the app, not to its submission ZIP.
+        run('xcrun', 'stapler', 'staple', app)
+        run('xcrun', 'stapler', 'validate', app)
+        run('spctl', '--assess', '--type', 'execute', '--verbose=2', app)
 
     # A copied app runs without the build interpreter on PATH, matching drag-to-install.
     installed = work / 'Applications test' / 'Fetch.app'
@@ -83,12 +110,14 @@ def build():
     dmg = output / f'Fetch-macOS-{arch}.dmg'
     run('hdiutil', 'create', '-volname', 'Fetch', '-srcfolder', staging,
         '-ov', '-format', 'UDZO', dmg)
+    if signed:
+        notarize(dmg)
     checksum = hashlib.sha256(dmg.read_bytes()).hexdigest()
     dmg.with_suffix('.dmg.sha256').write_text(f'{checksum}  {dmg.name}\n')
     report = {'version': APP_VERSION, 'arch': arch, 'os': platform.mac_ver()[0],
               'self_test': True, 'relocated_self_test': True, 'ui_render': True,
-              'developer_id_signed': bool(os.environ.get('MAC_SIGN_IDENTITY')),
-              'notarized': False, 'sha256': checksum}
+              'developer_id_signed': signed,
+              'notarized': signed, 'sha256': checksum}
     (output / f'verification-{arch}.json').write_text(json.dumps(report, indent=2))
 
 if __name__ == '__main__':
