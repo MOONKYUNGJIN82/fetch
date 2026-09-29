@@ -10,8 +10,9 @@ import urllib.request
 def run(*args):
     try:
         return subprocess.run(args, check=True, capture_output=True, text=True).stdout
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError(f'Signing setup failed: {Path(args[0]).name} {args[1]}') from error
+    except subprocess.CalledProcessError:
+        # Suppress CalledProcessError's command-line arguments, which may contain passwords.
+        raise RuntimeError(f'Signing setup failed: {Path(args[0]).name} {args[1]}') from None
 
 
 def main():
