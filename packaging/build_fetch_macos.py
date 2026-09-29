@@ -27,17 +27,14 @@ def build():
     work = ROOT / 'build/macos'
     work.mkdir(parents=True, exist_ok=True)
     asset_name = f'deno-{"aarch64" if arch == "arm64" else "x86_64"}-apple-darwin.zip'
-    request = urllib.request.Request('https://api.github.com/repos/denoland/deno/releases/tags/v2.9.6',
-        headers={'User-Agent': 'Fetch-Build'})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        release = json.load(response)
-    asset = next(a for a in release['assets'] if a['name'] == asset_name)
-    digest = asset.get('digest', '')
-    if not digest.startswith('sha256:'):
-        raise RuntimeError('Deno release checksum unavailable')
+    # Checksums from the official Deno v2.9.6 release metadata.
+    digest = {
+        'arm64': '213a2f304f04d3c9cb5220669afad138f60a5aab1fe80962abdeb8f35807a472',
+        'x86_64': '7d4524b82bcc557fe020a1a5b56956ed42b992ae5b28026e8ad5d17329533f5f',
+    }[arch]
     archive_path = work / asset_name
-    urllib.request.urlretrieve(asset['browser_download_url'], archive_path)
-    if hashlib.sha256(archive_path.read_bytes()).hexdigest() != digest[7:]:
+    urllib.request.urlretrieve('https://github.com/denoland/deno/releases/download/v2.9.6/' + asset_name, archive_path)
+    if hashlib.sha256(archive_path.read_bytes()).hexdigest() != digest:
         raise RuntimeError('Deno checksum mismatch')
     with zipfile.ZipFile(archive_path) as archive:
         (work / 'deno').write_bytes(archive.read('deno'))
