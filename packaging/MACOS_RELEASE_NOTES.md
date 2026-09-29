@@ -15,8 +15,9 @@ verified update DMG; replacing the app in Applications remains a manual step.
 
 ## Release gates
 
-Developer ID signing and Apple notarization are not complete. These files must
-not be advertised as Gatekeeper-approved installers. Do not disable macOS
+Developer ID signing and Apple notarization are available only in the manual
+`signed=true` workflow with the protected signing environment. Ordinary preview
+artifacts must not be advertised as Gatekeeper-approved installers. Do not disable macOS
 security protections to install this preview.
 
 Interactive testing on a user's Mac, including real downloads, folder access
