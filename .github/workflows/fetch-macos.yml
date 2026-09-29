@@ -9,6 +9,8 @@ on:
         default: false
   push:
     branches: [macos-preview]
+  pull_request:
+    branches: [macos-preview]
 permissions:
   contents: read
 jobs:
