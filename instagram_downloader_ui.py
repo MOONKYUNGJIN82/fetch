@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QPlainTextEdit,
     QProgressBar,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -381,7 +383,15 @@ class MainWindow(QMainWindow):
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
-        body.addWidget(self.workspace(), 1)
+        workspace = self.workspace()
+        if sys.platform == "darwin":
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setWidget(workspace)
+            body.addWidget(scroll, 1)
+        else:
+            body.addWidget(workspace, 1)
         body.addWidget(self.side_panel())
         page.addLayout(body, 1)
 
@@ -435,6 +445,9 @@ class MainWindow(QMainWindow):
         stage_layout = QVBoxLayout(stage)
         stage_layout.setContentsMargins(22, 20, 22, 18)
         stage_layout.setSpacing(10)
+        if sys.platform == "darwin":
+            stage_layout.setSizeConstraint(QLayout.SetMinimumSize)
+            layout.setSizeConstraint(QLayout.SetMinimumSize)
 
         eyebrow = QLabel("DOWNLOAD QUEUE")
         eyebrow.setObjectName("Eyebrow")
