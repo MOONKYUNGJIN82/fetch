@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import http.cookiejar
 import re
 import sys
 import urllib.parse
@@ -77,7 +78,7 @@ class CallbackLogger:
 
 
 def is_behance_url(url: str) -> bool:
-    host = urllib.parse.urlparse(url).netloc.lower()
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
     return host == "behance.net" or host.endswith(".behance.net")
 
 
@@ -88,9 +89,24 @@ def sanitize_filename(value: str, fallback: str = "download") -> str:
     return value[:120] or fallback
 
 
-def fetch_text(url: str) -> str:
+def open_media_url(request, timeout: int, cookies: Path | None = None):
+    if cookies is None:
+        return urllib.request.urlopen(request, timeout=timeout, context=tls_context())
+    jar = http.cookiejar.MozillaCookieJar(str(cookies))
+    try:
+        jar.load(ignore_discard=True, ignore_expires=False)
+    except (OSError, http.cookiejar.LoadError) as exc:
+        raise ValueError("선택한 쿠키 파일을 읽을 수 없습니다. Netscape 형식의 cookies.txt를 선택해 주세요.") from exc
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=tls_context()),
+        urllib.request.HTTPCookieProcessor(jar),
+    )
+    return opener.open(request, timeout=timeout)
+
+
+def fetch_text(url: str, cookies: Path | None = None) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30, context=tls_context()) as response:
+    with open_media_url(request, timeout=30, cookies=cookies) as response:
         return response.read().decode("utf-8", errors="replace")
 
 
@@ -129,10 +145,10 @@ def extension_from_url(url: str) -> str:
     return ".bin"
 
 
-def extract_behance_media(url: str, log: LogCallback | None = None) -> tuple[list[str], list[str]]:
+def extract_behance_media(url: str, log: LogCallback | None = None, cookies: Path | None = None) -> tuple[list[str], list[str]]:
     logger = log or (lambda message: None)
     logger("Fetching Behance page...")
-    page = normalize_page_text(fetch_text(url))
+    page = normalize_page_text(fetch_text(url, cookies=cookies) if cookies else fetch_text(url))
 
     candidates = re.findall(
         r"https?://[^\"'<>\s\\]+?\.(?:jpg|jpeg|png|webp|gif|mp4|mov|m4v|webm)(?:\?[^\"'<>\s\\]+)?",
@@ -145,9 +161,11 @@ def extract_behance_media(url: str, log: LogCallback | None = None) -> tuple[lis
     for candidate in candidates:
         cleaned = candidate.rstrip(".,);]")
         parsed = urllib.parse.urlparse(cleaned)
-        host = parsed.netloc.lower()
+        host = (parsed.hostname or "").lower()
         path = parsed.path.lower()
-        if "behance.net" not in host and "behance" not in path:
+        if not (host == "behance.net" or host.endswith(".behance.net")):
+            continue
+        if "/project_modules/" not in path:
             continue
         suffix = Path(path).suffix.lower()
         key = Path(path).name.lower()
@@ -258,6 +276,8 @@ def download_direct_files(
     kind: str,
     log: LogCallback | None = None,
     progress: ProgressCallback | None = None,
+    cookies: Path | None = None,
+    errors: list[str] | None = None,
 ) -> int:
     logger = log or (lambda message: None)
     folder.mkdir(parents=True, exist_ok=True)
@@ -275,12 +295,29 @@ def download_direct_files(
 
         logger(f"Downloading {kind} {index}/{total}: {target.name}")
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Referer": "https://www.behance.net/"})
-        with urllib.request.urlopen(request, timeout=60, context=tls_context()) as response, target.open("wb") as file:
-            shutil_buffer = response.read(1024 * 128)
-            while shutil_buffer:
-                file.write(shutil_buffer)
-                shutil_buffer = response.read(1024 * 128)
-        downloaded += 1
+        temporary = target.with_suffix(target.suffix + ".part")
+        try:
+            with open_media_url(request, timeout=60, cookies=cookies) as response, temporary.open("wb") as file:
+                content_type = response.headers.get("Content-Type", "").lower()
+                if "text/html" in content_type or "application/json" in content_type:
+                    raise ValueError("서버가 미디어 대신 오류 페이지를 반환했습니다.")
+                expected = int(response.headers.get("Content-Length") or 0)
+                received = 0
+                while chunk := response.read(1024 * 128):
+                    file.write(chunk)
+                    received += len(chunk)
+                if not received or (expected and expected != received):
+                    raise ValueError("미디어 파일 다운로드가 중단되거나 비어 있습니다.")
+            temporary.replace(target)
+            downloaded += 1
+        except Exception as exc:
+            if errors is None:
+                raise
+            message = f"Behance {kind} {index}: {exc}"
+            errors.append(message)
+            logger(message)
+        finally:
+            temporary.unlink(missing_ok=True)
         if progress:
             progress(min(100, int(index * 100 / max(total, 1))))
 
@@ -368,6 +405,30 @@ def download_urls(
                     url_result = download_instagram(ydl, url, output_dir, include_videos, include_images, logger)
             except Exception as exc:
                 url_result.errors.append(f"Instagram extraction failed: {exc}")
+        elif is_behance_url(url):
+            try:
+                images, direct_videos = extract_behance_media(url, logger, cookies=cookies)
+                if include_images:
+                    url_result.images += download_direct_files(images, output_dir, "image", logger, progress, cookies, url_result.errors)
+                if include_videos:
+                    url_result.videos += download_direct_files(direct_videos, output_dir, "video", logger, progress, cookies, url_result.errors)
+                    if not direct_videos:
+                        # Let yt-dlp resolve embedded players only after page access succeeds.
+                        options = build_ydl_options(output_dir, format_selector, cookies, write_metadata,
+                                                    allow_multiple, quiet, logger, progress_hook)
+                        try:
+                            with YoutubeDL(options) as ydl:
+                                info = ydl.extract_info(url, download=True)
+                            if info:
+                                url_result.videos += 1
+                        except Exception as exc:
+                            logger(f"Behance embedded video: {exc}")
+                            if not url_result.images:
+                                url_result.errors.append(f"Behance video: {exc}")
+                if not url_result.images and not url_result.videos and not url_result.errors:
+                    url_result.errors.append("Behance: 선택한 종류의 미디어를 찾지 못했습니다.")
+            except Exception as exc:
+                url_result.errors.append(f"Behance extraction failed: {exc}")
         elif include_videos:
             selector = INSTAGRAM_VIDEO_FORMAT if is_instagram_url(url) and format_selector == DEFAULT_VIDEO_FORMAT else format_selector
             options = build_ydl_options(
@@ -393,20 +454,6 @@ def download_urls(
                     url_result.errors.append(message)
             except Exception as exc:
                 url_result.errors.append(f"Video download error: {exc}")
-
-        if is_behance_url(url) and include_images:
-            try:
-                images, direct_videos = extract_behance_media(url, logger)
-                folder = project_folder_from_url(output_dir, url)
-                if images:
-                    url_result.images += download_direct_files(images, folder / "images", "image", logger, progress)
-                if include_videos and direct_videos:
-                    url_result.videos += download_direct_files(direct_videos, folder / "videos", "video", logger, progress)
-                if not images and not direct_videos:
-                    url_result.skipped += 1
-                    logger("No Behance image or direct video URLs found.")
-            except Exception as exc:
-                url_result.errors.append(f"Behance extraction failed: {exc}")
 
         result.videos += url_result.videos
         result.images += url_result.images

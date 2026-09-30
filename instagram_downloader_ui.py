@@ -140,10 +140,23 @@ def write_source_url(target_dir: Path, url: str) -> None:
         file.write(f"[{stamp}] {url}\n")
 
 
-def friendly_error(message: str) -> str:
+def friendly_error(message: str, platform: str = "", has_cookies: bool = False) -> str:
     lowered = message.lower()
-    if "login" in lowered or "cookie" in lowered or "not authorized" in lowered:
-        return "로그인이 필요한 Instagram 콘텐츠일 수 있습니다. 브라우저에서 cookies.txt를 내보낸 뒤 앱에서 선택해 주세요."
+    service = platform or ("Instagram" if "instagram" in lowered else "사이트")
+    if "login" in lowered and " or " in lowered and any(term in lowered for term in ("rate-limit", "rate limit", "not available", "unavailable")):
+        return f"{service}에서 미디어 정보를 확인하지 못했습니다. 로그인 필요, 요청 제한, 게시물 접근 제한 중 어느 원인인지는 이 응답만으로 확정할 수 없습니다. 브라우저에서 원본 접근을 확인해 주세요."
+    if "429" in lowered or "rate limit" in lowered or "too many requests" in lowered:
+        return f"{service} 요청 제한에 걸렸습니다. 반복 시도를 멈추고 잠시 후 다시 시도해 주세요."
+    if "403" in lowered or "forbidden" in lowered:
+        return f"{service}가 접근을 거부했습니다(403). 브라우저에서 원본 접근을 확인해 주세요. 로그인 문제인지 자동 요청 차단인지는 이 응답만으로 구분할 수 없습니다."
+    if "certificate_verify_failed" in lowered:
+        return "HTTPS 인증서 검증에 실패했습니다. PC 시간과 네트워크 인증서를 확인해 주세요."
+    if "cookie" in lowered and any(term in lowered for term in ("expired", "invalid", "failed to load", "does not look like")):
+        return "선택한 쿠키가 만료됐거나 형식이 잘못됐습니다. 본인 브라우저에서 새 cookies.txt를 내보내 선택해 주세요."
+    if any(term in lowered for term in ("login required", "log in", "login_required", "not authorized", "login is required", "login-required")):
+        if has_cookies:
+            return f"{service}가 선택한 로그인 세션으로 접근을 허용하지 않았습니다. 브라우저에서 게시물 접근과 세션 만료 여부를 확인해 주세요."
+        return f"{service}가 로그인을 요구했습니다. 본인 계정으로 브라우저에서 접근 가능한 콘텐츠라면 cookies.txt를 선택해 주세요."
     if "no video formats found" in lowered or "video formats are missing" in lowered:
         return "영상 정보를 찾지 못했습니다. 사진 게시물인지 또는 영상 접근이 제한됐는지 확인해 주세요."
     if "empty media response" in lowered:
@@ -225,7 +238,7 @@ class DownloadWorker(QObject):
                     )
                     self.log.emit(f"완료: {result.summary()}")
                 else:
-                    error_text = "\n".join(friendly_error(error) for error in result.errors) if result.errors else "다운로드된 파일이 없습니다."
+                    error_text = "\n".join(friendly_error(error, platform, bool(self.cookies)) for error in result.errors) if result.errors else "다운로드된 파일이 없습니다."
                     errors.append(f"{platform}: {error_text}")
                     records.append(
                         {
@@ -304,7 +317,7 @@ class ThumbnailWorker(QObject):
                 except Exception:
                     pass
             elif is_behance_url(self.url):
-                images, videos = extract_behance_media(self.url)
+                images, videos = extract_behance_media(self.url, cookies=self.cookies)
                 thumbnail_url = images[0] if images else ""
                 title = "Behance"
             else:
@@ -339,7 +352,7 @@ class ThumbnailWorker(QObject):
                 data = response.read(4 * 1024 * 1024)
             self.finished.emit(self.url, True, data, title, "")
         except Exception as exc:
-            self.finished.emit(self.url, False, None, platform_name(self.url), friendly_error(str(exc)))
+            self.finished.emit(self.url, False, None, platform_name(self.url), friendly_error(str(exc), platform_name(self.url), bool(self.cookies)))
 
 
 class UpdateCheckWorker(QObject):
