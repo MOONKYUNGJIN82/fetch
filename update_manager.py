@@ -11,6 +11,7 @@ import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+from network_support import tls_context
 
 from app_config import APP_VERSION, GITHUB_INSTALLER_ASSET, GITHUB_OWNER, GITHUB_RELEASE_API, GITHUB_REPO
 
@@ -52,7 +53,7 @@ def _request_json(url: str) -> dict:
             "User-Agent": "Fetch-Updater",
         },
     )
-    with urllib.request.urlopen(request, timeout=20) as response:
+    with urllib.request.urlopen(request, timeout=20, context=tls_context()) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -71,9 +72,28 @@ def installer_asset_name(system: str | None = None, machine: str | None = None) 
 
 
 def check_for_update(current_version: str = APP_VERSION) -> UpdateInfo | None:
-    data = _request_json(latest_release_api_url())
+    if sys.platform == "darwin":
+        releases = _request_json(f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=100")
+        if isinstance(releases, dict):
+            releases = [releases]
+        candidates = []
+        for release in releases:
+            tag = str(release.get("tag_name") or "")
+            if release.get("draft"):
+                continue
+            if release.get("prerelease") and not re.fullmatch(r"v?\d+\.\d+\.\d+-macos-preview\.\d+", tag):
+                continue
+            if any(a.get("name") == installer_asset_name() for a in release.get("assets", [])):
+                candidates.append(release)
+        if not candidates:
+            return None
+        data = max(candidates, key=lambda r: version_key(r["tag_name"].split("-")[0]))
+    else:
+        data = _request_json(latest_release_api_url())
     latest_version = str(data.get("tag_name") or data.get("name") or "").lstrip("vV")
-    if data.get("draft") or data.get("prerelease"):
+    if sys.platform == "darwin":
+        latest_version = latest_version.split("-")[0]
+    if data.get("draft") or (data.get("prerelease") and sys.platform != "darwin"):
         return None
     if not latest_version or not is_newer_version(latest_version, current_version):
         return None
@@ -132,7 +152,7 @@ def download_installer(update: UpdateInfo, progress: Callable[[int], None] | Non
     request = urllib.request.Request(update.download_url, headers={"User-Agent": "Fetch-Updater"})
     digest = hashlib.sha256()
     try:
-        with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as file:
+        with urllib.request.urlopen(request, timeout=60, context=tls_context()) as response, partial.open("wb") as file:
             total = int(response.headers.get("Content-Length") or "0")
             received = 0
             while chunk := response.read(1024 * 512):

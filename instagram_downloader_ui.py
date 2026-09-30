@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, QSize, QSettings, QThread, QTimer, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, QSize, QSettings, QThread, QTimer, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QFont, QFontDatabase, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -52,6 +52,7 @@ from media_downloader import (
 )
 from update_manager import UpdateInfo, check_for_update, download_installer
 from yt_dlp import YoutubeDL
+from network_support import tls_context
 
 
 BEST_VIDEO_FORMAT = "bv*+ba/b"
@@ -279,11 +280,30 @@ class ThumbnailWorker(QObject):
         self.url = url
         self.cookies = cookies
 
+    @Slot()
     def run(self) -> None:
         try:
             title = platform_name(self.url)
             thumbnail_url = ""
-            if is_behance_url(self.url):
+            parsed = urllib.parse.urlparse(self.url)
+            video_id = ""
+            if parsed.hostname in ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"):
+                video_id = urllib.parse.parse_qs(parsed.query).get("v", [""])[0]
+                if not video_id and parsed.path.startswith(("/shorts/", "/embed/", "/live/")):
+                    video_id = parsed.path.split("/")[2]
+            elif parsed.hostname in ("youtu.be", "www.youtu.be"):
+                video_id = parsed.path.strip("/").split("/")[0]
+            if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+                # Preview does not need format extraction, Deno or playlist expansion.
+                canonical = "https://www.youtube.com/watch?v=" + video_id
+                thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                try:
+                    endpoint = "https://www.youtube.com/oembed?" + urllib.parse.urlencode({"url": canonical, "format": "json"})
+                    with urllib.request.urlopen(endpoint, timeout=10, context=tls_context()) as response:
+                        title = str(json.load(response).get("title") or title)
+                except Exception:
+                    pass
+            elif is_behance_url(self.url):
                 images, videos = extract_behance_media(self.url)
                 thumbnail_url = images[0] if images else ""
                 title = "Behance"
@@ -294,6 +314,9 @@ class ThumbnailWorker(QObject):
                     "no_warnings": True,
                     "skip_download": True,
                     "noplaylist": True,
+                    "socket_timeout": 15,
+                    "retries": 1,
+                    "ignore_no_formats_error": True,
                     "http_headers": {"User-Agent": USER_AGENT},
                 }
                 if self.cookies:
@@ -312,7 +335,7 @@ class ThumbnailWorker(QObject):
                 self.finished.emit(self.url, False, None, title, "썸네일을 찾지 못했습니다.")
                 return
             request = urllib.request.Request(thumbnail_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=20) as response:
+            with urllib.request.urlopen(request, timeout=20, context=tls_context()) as response:
                 data = response.read(4 * 1024 * 1024)
             self.finished.emit(self.url, True, data, title, "")
         except Exception as exc:
@@ -352,7 +375,7 @@ class MainWindow(QMainWindow):
     def __init__(self, font_family: str) -> None:
         super().__init__()
         self.font_family = font_family
-        self.thread: QThread | None = None
+        self.download_thread: QThread | None = None
         self.worker: DownloadWorker | None = None
         self.update_thread: QThread | None = None
         self.update_worker: QObject | None = None
@@ -402,7 +425,8 @@ class MainWindow(QMainWindow):
         self.clipboard_timer = QTimer(self)
         self.clipboard_timer.timeout.connect(self.scan_clipboard)
         self.clipboard_timer.start(1500)
-        QTimer.singleShot(5000, lambda: self.check_updates(silent=True))
+        if "--interaction-test" not in sys.argv and "--smoke-test" not in sys.argv:
+            QTimer.singleShot(5000, lambda: self.check_updates(silent=True))
 
     def top_bar(self) -> QFrame:
         bar = QFrame()
@@ -843,13 +867,14 @@ class MainWindow(QMainWindow):
         self.thumbnail_worker = ThumbnailWorker(url, cookies)
         self.thumbnail_worker.moveToThread(self.thumbnail_thread)
         self.thumbnail_thread.started.connect(self.thumbnail_worker.run)
-        self.thumbnail_worker.finished.connect(self.thumbnail_finished)
+        self.thumbnail_worker.finished.connect(self.thumbnail_finished, Qt.QueuedConnection)
         self.thumbnail_worker.finished.connect(self.thumbnail_thread.quit)
         self.thumbnail_worker.finished.connect(self.thumbnail_worker.deleteLater)
         self.thumbnail_thread.finished.connect(self.thumbnail_thread.deleteLater)
         self.thumbnail_thread.finished.connect(self.clear_thumbnail_worker)
         self.thumbnail_thread.start()
 
+    @Slot(str, bool, object, str, str)
     def thumbnail_finished(self, url: str, ok: bool, data: object, title: str, error: str) -> None:
         item = self.find_queue_item(url)
         if item is None:
@@ -864,13 +889,20 @@ class MainWindow(QMainWindow):
                 item.setIcon(QIcon(pixmap.scaled(QSize(128, 72), Qt.KeepAspectRatio, Qt.SmoothTransformation)))
                 return
         item.setText(f"{display_title}\n미리보기 없음 - {url}")
+        if error:
+            self.append_log(f"미리보기 실패: {error}")
 
+    @Slot()
     def clear_thumbnail_worker(self) -> None:
         self.thumbnail_thread = None
         self.thumbnail_worker = None
         self.start_next_thumbnail()
 
     def closeEvent(self, event: object) -> None:
+        if any(thread is not None for thread in (self.download_thread, self.thumbnail_thread, self.update_thread)):
+            event.ignore()
+            self.status_label.setText("작업 완료 후 닫아 주세요")
+            return
         self.save_settings()
         super().closeEvent(event)
 
@@ -906,7 +938,7 @@ class MainWindow(QMainWindow):
         self.append_log(f"저장 폴더: {output_dir}")
         self.last_output_dir = output_dir
 
-        self.thread = QThread()
+        self.download_thread = QThread()
         self.worker = DownloadWorker(
             urls,
             output_dir,
@@ -917,18 +949,24 @@ class MainWindow(QMainWindow):
             self.quality_combo.currentData(),
             self.platform_folder_check.isChecked(),
         )
-        self.worker.moveToThread(self.thread)
-        self.thread.started.connect(self.worker.run)
+        self.worker.moveToThread(self.download_thread)
+        self.download_thread.started.connect(self.worker.run)
         self.worker.log.connect(self.append_log)
         self.worker.progress.connect(self.progress.setValue)
-        self.worker.finished.connect(self.download_finished)
-        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.download_finished, Qt.QueuedConnection)
+        self.worker.finished.connect(self.download_thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.thread.start()
+        self.download_thread.finished.connect(self.download_thread.deleteLater)
+        self.download_thread.finished.connect(self.clear_download_worker)
+        self.download_thread.start()
+
+    @Slot()
+    def clear_download_worker(self) -> None:
+        self.download_thread = None
+        self.worker = None
 
     def check_updates(self, silent: bool = False) -> None:
-        if self.update_thread is not None or self.thread is not None:
+        if self.update_thread is not None or self.download_thread is not None:
             return
         self.silent_update_check = silent
         self.status_label.setText("Checking")
@@ -939,13 +977,14 @@ class MainWindow(QMainWindow):
         self.update_worker = UpdateCheckWorker()
         self.update_worker.moveToThread(self.update_thread)
         self.update_thread.started.connect(self.update_worker.run)
-        self.update_worker.finished.connect(self.update_check_finished)
+        self.update_worker.finished.connect(self.update_check_finished, Qt.QueuedConnection)
         self.update_worker.finished.connect(self.update_thread.quit)
         self.update_worker.finished.connect(self.update_worker.deleteLater)
         self.update_thread.finished.connect(self.update_thread.deleteLater)
         self.update_thread.finished.connect(self.clear_update_worker)
         self.update_thread.start()
 
+    @Slot(bool, object, str)
     def update_check_finished(self, ok: bool, update: object, error: str) -> None:
         self.status_label.setText("Ready")
         self.update_button.setEnabled(True)
@@ -960,7 +999,7 @@ class MainWindow(QMainWindow):
             self.append_log("최신 버전입니다.")
             return
 
-        if self.thread is not None:
+        if self.download_thread is not None:
             self.append_log("다운로드가 끝난 뒤 업데이트를 다시 확인해 주세요.")
             return
         assert isinstance(update, UpdateInfo)
@@ -988,13 +1027,14 @@ class MainWindow(QMainWindow):
         self.update_worker.moveToThread(self.update_thread)
         self.update_thread.started.connect(self.update_worker.run)
         self.update_worker.progress.connect(self.progress.setValue)
-        self.update_worker.finished.connect(self.update_download_finished)
+        self.update_worker.finished.connect(self.update_download_finished, Qt.QueuedConnection)
         self.update_worker.finished.connect(self.update_thread.quit)
         self.update_worker.finished.connect(self.update_worker.deleteLater)
         self.update_thread.finished.connect(self.update_thread.deleteLater)
         self.update_thread.finished.connect(self.clear_update_worker)
         self.update_thread.start()
 
+    @Slot(bool, object, str)
     def update_download_finished(self, ok: bool, installer: object, error: str) -> None:
         self.set_busy(False)
         if not ok:
@@ -1041,6 +1081,7 @@ class MainWindow(QMainWindow):
             return
         QApplication.quit()
 
+    @Slot()
     def clear_update_worker(self) -> None:
         self.update_thread = None
         self.update_worker = None
@@ -1052,9 +1093,11 @@ class MainWindow(QMainWindow):
             self.pending_update = None
             self.download_update(update)
 
+    @Slot(str)
     def append_log(self, message: str) -> None:
         self.log_output.appendPlainText(message)
 
+    @Slot(bool, str, object)
     def download_finished(self, ok: bool, message: str, records: object) -> None:
         self.append_log(message)
         if isinstance(records, list):
@@ -1325,7 +1368,8 @@ def main() -> int:
             return 2
         import ssl
         import imageio_ffmpeg
-        ssl.create_default_context()
+        if not tls_context().get_ca_certs():
+            return 3
         subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-version"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -1341,6 +1385,26 @@ def main() -> int:
     font_family = load_pretendard(app)
     window = MainWindow(font_family)
     window.show()
+    if "--interaction-test" in sys.argv:
+        import time
+        index = sys.argv.index("--interaction-test")
+        url, destination = sys.argv[index + 1:index + 3]
+        window.clipboard_timer.stop()
+        window.clipboard_check.setChecked(True)
+        QApplication.clipboard().setText(url)
+        window.scan_clipboard()
+        deadline = time.monotonic() + 60
+        def check_preview() -> None:
+            if window.thumbnail_thread is not None and time.monotonic() < deadline:
+                QTimer.singleShot(100, check_preview)
+                return
+            item = window.queue_list.item(0)
+            ok = window.thumbnail_thread is None and item is not None and not item.icon().isNull()
+            if not ok:
+                print(window.log_output.toPlainText(), file=sys.stderr)
+            captured = window.grab().save(destination)
+            app.exit(0 if ok and captured else 1)
+        QTimer.singleShot(100, check_preview)
     if "--smoke-test" in sys.argv:
         window.clipboard_timer.stop()
         output = Path(sys.argv[sys.argv.index("--smoke-test") + 1])

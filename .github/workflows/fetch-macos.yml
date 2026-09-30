@@ -46,6 +46,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_instagram_downloads.py'
           python -m unittest discover -s tests -p 'test_macos_support.py'
           python -m unittest discover -s tests -p 'test_macos_signing.py'
+          python -m unittest discover -s tests -p 'test_mac_regressions.py'
       - name: Prepare KALLOS signing keychain
         if: github.event_name == 'workflow_dispatch' && inputs.signed
         run: python packaging/prepare_macos_signing.py
@@ -59,4 +60,5 @@ jobs:
           path: |
             release/macos/*
             build/macos/Fetch-ui.png
+            build/macos/Fetch-preview.png
           if-no-files-found: error

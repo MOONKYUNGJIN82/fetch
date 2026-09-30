@@ -5,6 +5,7 @@ import re
 import sys
 import urllib.parse
 import urllib.request
+from network_support import tls_context
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -89,7 +90,7 @@ def sanitize_filename(value: str, fallback: str = "download") -> str:
 
 def fetch_text(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30, context=tls_context()) as response:
         return response.read().decode("utf-8", errors="replace")
 
 
@@ -274,7 +275,7 @@ def download_direct_files(
 
         logger(f"Downloading {kind} {index}/{total}: {target.name}")
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Referer": "https://www.behance.net/"})
-        with urllib.request.urlopen(request, timeout=60) as response, target.open("wb") as file:
+        with urllib.request.urlopen(request, timeout=60, context=tls_context()) as response, target.open("wb") as file:
             shutil_buffer = response.read(1024 * 128)
             while shutil_buffer:
                 file.write(shutil_buffer)

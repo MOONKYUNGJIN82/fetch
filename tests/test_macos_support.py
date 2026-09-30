@@ -14,9 +14,8 @@ class MacSupportTests(unittest.TestCase):
 
     def test_mac_does_not_select_windows_installer(self):
         data = {'tag_name': 'v9.0.0', 'assets': [{'name': 'Fetch.Setup.exe'}]}
-        with patch.object(updates.sys, 'platform', 'darwin'), patch.object(updates, '_request_json', return_value=data):
-            with self.assertRaises(RuntimeError):
-                updates.check_for_update('1.5.0')
+        with patch.object(updates.sys, 'platform', 'darwin'), patch.object(updates.platform, 'machine', return_value='arm64'), patch.object(updates, '_request_json', return_value=data):
+            self.assertIsNone(updates.check_for_update('1.5.0'))
 
     def test_mac_selects_matching_asset_and_digest(self):
         name = 'Fetch-macOS-arm64.dmg'
