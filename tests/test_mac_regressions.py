@@ -105,6 +105,20 @@ class MacRegressionTests(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertFalse(results[0][1])
 
+    def test_update_starts_after_worker_finishes_during_confirmation(self):
+        with patch.object(ui.MainWindow, 'load_settings'), patch.object(ui.MainWindow, 'save_settings'), patch.object(ui.MainWindow, 'load_history', return_value=[]), patch.object(ui.MainWindow, 'download_update') as download:
+            window = ui.MainWindow('Arial')
+            window.clipboard_timer.stop()
+            window.update_thread = object()
+            def confirm(*args):
+                window.clear_update_worker()
+                return ui.QMessageBox.Yes
+            update = updates.UpdateInfo('9.0.0', '', 'Fetch-macOS-arm64.dmg', 'https://github.com/test', 'a'*64)
+            with patch.object(ui.QMessageBox, 'question', side_effect=confirm):
+                window.update_check_finished(True, update, '')
+            download.assert_called_once_with(update)
+            window.close()
+
 
 if __name__ == '__main__':
     unittest.main()

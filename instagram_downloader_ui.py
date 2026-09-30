@@ -1012,7 +1012,10 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes,
         )
         if answer == QMessageBox.Yes:
-            self.pending_update = update
+            if self.update_thread is None:
+                self.download_update(update)
+            else:
+                self.pending_update = update
 
     def download_update(self, update: UpdateInfo) -> None:
         if self.update_thread is not None:
