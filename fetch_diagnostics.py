@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app_config import APP_VERSION
+from localization import tr, translate_report
 
 
 def error_categories(log):
@@ -21,7 +22,7 @@ def error_categories(log):
         ("연결 시간 초과", r"timed out|timeout|시간 초과"),
         ("네트워크 연결", r"connection refused|connection reset|name resolution|urlopen error"),
         ("저장 권한", r"permission denied|access.denied|winerror 5|액세스.*거부"),
-        ("미디어 추출", r"no video formats|no formats|미디어.*못|썸네일.*못"),
+        ("미디어 추출", r"no video formats|no formats|requested format is not available|미디어.*못|썸네일.*못"),
     ]
     results = []
     for line in log.splitlines()[-300:]:
@@ -87,7 +88,7 @@ def build_report(folder, log, saved_services=(), manual_cookie=False):
     lines += error_categories(log) or ["기록된 오류 없음"]
     lines += ["", "URL, 경로, 계정명, 쿠키, 토큰, 오류 원문은 포함하지 않습니다.",
               "오류 분류는 로그의 단서이며 확정 진단이 아닙니다. 자동 전송되지 않습니다."]
-    return "\n".join(lines)
+    return translate_report("\n".join(lines))
 
 
 def show_diagnostics(parent, folder, log, saved_services, manual_cookie):
@@ -102,23 +103,23 @@ def show_diagnostics(parent, folder, log, saved_services, manual_cookie):
             try:
                 report = build_report(folder, log, saved_services, manual_cookie)
             except Exception:
-                report = "진단 생성에 실패했습니다. 개인정보 보호를 위해 오류 원문은 제외했습니다."
+                report = tr("진단 생성에 실패했습니다. 개인정보 보호를 위해 오류 원문은 제외했습니다.")
             self.ready.emit(report)
 
     class Dialog(QDialog):
         def __init__(self):
             super().__init__(parent)
-            self.setWindowTitle("Fetch 진단 정보")
+            self.setWindowTitle(tr("Fetch 진단 정보"))
             self.resize(660, 600)
             layout = QVBoxLayout(self)
-            self.text = QPlainTextEdit("진단 중...")
+            self.text = QPlainTextEdit(tr("진단 중..."))
             self.text.setReadOnly(True)
             layout.addWidget(self.text)
             row = QHBoxLayout()
-            self.copy = QPushButton("진단 정보 복사")
+            self.copy = QPushButton(tr("진단 정보 복사"))
             self.copy.setEnabled(False)
             self.copy.clicked.connect(self.copy_report)
-            close = QPushButton("닫기")
+            close = QPushButton(tr("닫기"))
             close.clicked.connect(self.reject)
             row.addWidget(self.copy)
             row.addWidget(close)
@@ -145,7 +146,7 @@ def show_diagnostics(parent, folder, log, saved_services, manual_cookie):
 
         def copy_report(self):
             QApplication.clipboard().setText(self.text.toPlainText())
-            self.copy.setText("복사 완료")
+            self.copy.setText(tr("복사 완료"))
 
         def reject(self):
             if not self.running:

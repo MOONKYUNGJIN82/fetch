@@ -55,6 +55,7 @@ from media_downloader import (
 from update_manager import UpdateInfo, check_for_update, download_installer
 from yt_dlp import YoutubeDL
 from network_support import tls_context
+from localization import tr, set_language, get_language
 from account_sessions import cookies_for_url, apply_session, SessionStore, SERVICES
 
 
@@ -145,31 +146,31 @@ def write_source_url(target_dir: Path, url: str) -> None:
 
 def friendly_error(message: str, platform: str = "", has_cookies: bool = False) -> str:
     lowered = message.lower()
-    service = platform or ("Instagram" if "instagram" in lowered else "사이트")
+    service = platform or ("Instagram" if "instagram" in lowered else tr("사이트"))
     if "login" in lowered and " or " in lowered and any(term in lowered for term in ("rate-limit", "rate limit", "not available", "unavailable")):
-        return f"{service}에서 미디어 정보를 확인하지 못했습니다. 로그인 필요, 요청 제한, 게시물 접근 제한 중 어느 원인인지는 이 응답만으로 확정할 수 없습니다. 브라우저에서 원본 접근을 확인해 주세요."
+        return tr(f"{service}에서 미디어 정보를 확인하지 못했습니다. 로그인 필요, 요청 제한, 게시물 접근 제한 중 어느 원인인지는 이 응답만으로 확정할 수 없습니다. 브라우저에서 원본 접근을 확인해 주세요.")
     if "429" in lowered or "rate limit" in lowered or "too many requests" in lowered:
-        return f"{service} 요청 제한에 걸렸습니다. 반복 시도를 멈추고 잠시 후 다시 시도해 주세요."
+        return tr(f"{service} 요청 제한에 걸렸습니다. 반복 시도를 멈추고 잠시 후 다시 시도해 주세요.")
     if "403" in lowered or "forbidden" in lowered:
-        return f"{service}가 접근을 거부했습니다(403). 브라우저에서 원본 접근을 확인해 주세요. 로그인 문제인지 자동 요청 차단인지는 이 응답만으로 구분할 수 없습니다."
+        return tr(f"{service}가 접근을 거부했습니다(403). 브라우저에서 원본 접근을 확인해 주세요. 로그인 문제인지 자동 요청 차단인지는 이 응답만으로 구분할 수 없습니다.")
     if "certificate_verify_failed" in lowered:
-        return "HTTPS 인증서 검증에 실패했습니다. PC 시간과 네트워크 인증서를 확인해 주세요."
+        return tr("HTTPS 인증서 검증에 실패했습니다. PC 시간과 네트워크 인증서를 확인해 주세요.")
     if "cookie" in lowered and any(term in lowered for term in ("expired", "invalid", "failed to load", "does not look like")):
-        return "선택한 쿠키가 만료됐거나 형식이 잘못됐습니다. 본인 브라우저에서 새 cookies.txt를 내보내 선택해 주세요."
+        return tr("선택한 쿠키가 만료됐거나 형식이 잘못됐습니다. 본인 브라우저에서 새 cookies.txt를 내보내 선택해 주세요.")
     if any(term in lowered for term in ("login required", "log in", "login_required", "not authorized", "login is required", "login-required")):
         if has_cookies:
-            return f"{service}가 선택한 로그인 세션으로 접근을 허용하지 않았습니다. 브라우저에서 게시물 접근과 세션 만료 여부를 확인해 주세요."
-        return f"{service}가 로그인을 요구했습니다. 본인 계정으로 브라우저에서 접근 가능한 콘텐츠라면 cookies.txt를 선택해 주세요."
+            return tr(f"{service}가 선택한 로그인 세션으로 접근을 허용하지 않았습니다. 브라우저에서 게시물 접근과 세션 만료 여부를 확인해 주세요.")
+        return tr(f"{service}가 로그인을 요구했습니다. 본인 계정으로 브라우저에서 접근 가능한 콘텐츠라면 cookies.txt를 선택해 주세요.")
     if "no video formats found" in lowered or "video formats are missing" in lowered:
-        return "영상 정보를 찾지 못했습니다. 사진 게시물인지 또는 영상 접근이 제한됐는지 확인해 주세요."
+        return tr("영상 정보를 찾지 못했습니다. 사진 게시물인지 또는 영상 접근이 제한됐는지 확인해 주세요.")
     if "empty media response" in lowered:
-        return "Instagram에서 미디어 정보를 받지 못했습니다. 브라우저에서 게시물 접근 여부를 확인해 주세요. 로그인이 필요한 경우 cookies.txt를 선택하세요."
+        return tr("Instagram에서 미디어 정보를 받지 못했습니다. 브라우저에서 게시물 접근 여부를 확인해 주세요. 로그인이 필요한 경우 cookies.txt를 선택하세요.")
     if "private" in lowered or "unavailable" in lowered or "not found" in lowered:
-        return "콘텐츠가 비공개이거나 삭제/차단된 상태일 수 있습니다."
+        return tr("콘텐츠가 비공개이거나 삭제/차단된 상태일 수 있습니다.")
     if "network" in lowered or "timed out" in lowered or "10013" in lowered or "connection" in lowered:
-        return "네트워크 연결 또는 방화벽/보안 프로그램이 다운로드를 막고 있을 수 있습니다."
+        return tr("네트워크 연결 또는 방화벽/보안 프로그램이 다운로드를 막고 있을 수 있습니다.")
     if "ffmpeg" in lowered:
-        return "영상과 음성 병합 단계에서 문제가 생겼습니다. 앱을 최신 버전으로 업데이트해 주세요."
+        return tr("영상과 음성 병합 단계에서 문제가 생겼습니다. 앱을 최신 버전으로 업데이트해 주세요.")
     return message
 
 
@@ -212,15 +213,15 @@ class DownloadWorker(QObject):
                 target_dir = dated_output_dir(self.output_dir, platform, self.platform_subfolders)
                 write_source_url(target_dir, url)
                 self.log.emit(f"[{index}/{total}] {platform}: {url}")
-                self.log.emit(f"저장 위치: {target_dir}")
+                self.log.emit(tr(f"저장 위치: {target_dir}"))
                 try:
                     active_cookies = cookies_for_url(url, self.cookies)
                 except Exception:
-                    message = "저장된 계정 세션을 열 수 없거나 만료됐습니다. 계정을 다시 연결하거나 연결 해제 후 시도해 주세요."
+                    message = tr("저장된 계정 세션을 열 수 없거나 만료됐습니다. 계정을 다시 연결하거나 연결 해제 후 시도해 주세요.")
                     errors.append(f"{platform}: {message}")
                     records.append({"time": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                     "platform": platform, "url": url, "folder": str(target_dir),
-                                    "summary": message, "status": "실패"})
+                                    "summary": message, "status": tr("실패")})
                     self.log.emit(message)
                     self.progress.emit(int(index * 100 / max(total, 1)))
                     continue
@@ -247,12 +248,12 @@ class DownloadWorker(QObject):
                             "url": url,
                             "folder": str(target_dir),
                             "summary": result.summary(),
-                            "status": "완료",
+                            "status": tr("완료"),
                         }
                     )
-                    self.log.emit(f"완료: {result.summary()}")
+                    self.log.emit(tr(f"완료: {result.summary()}"))
                 else:
-                    error_text = "\n".join(friendly_error(error, platform, bool(active_cookies)) for error in result.errors) if result.errors else "다운로드된 파일이 없습니다."
+                    error_text = "\n".join(friendly_error(error, platform, bool(active_cookies)) for error in result.errors) if result.errors else tr("다운로드된 파일이 없습니다.")
                     errors.append(f"{platform}: {error_text}")
                     records.append(
                         {
@@ -261,24 +262,24 @@ class DownloadWorker(QObject):
                             "url": url,
                             "folder": str(target_dir),
                             "summary": error_text,
-                            "status": "실패",
+                            "status": tr("실패"),
                         }
                     )
                 self.progress.emit(int(index * 100 / max(total, 1)))
         except Exception as exc:
-            self.finished.emit(False, f"오류: {friendly_error(str(exc))}", records)
+            self.finished.emit(False, tr(f"오류: {friendly_error(str(exc))}"), records)
             return
 
         if errors:
-            message = f"{completed}/{total}개 다운로드 완료, {len(errors)}개 실패\n\n" + "\n".join(errors)
+            message = tr(f"{completed}/{total}개 다운로드 완료, {len(errors)}개 실패\n\n") + "\n".join(errors)
             self.finished.emit(False, message, records)
             return
 
         if completed:
             self.progress.emit(100)
-            self.finished.emit(True, f"{completed}개 다운로드가 완료됐습니다.", records)
+            self.finished.emit(True, tr(f"{completed}개 다운로드가 완료됐습니다."), records)
         else:
-            self.finished.emit(False, "다운로드된 파일이 없습니다. URL, 공개 여부, 쿠키 설정을 확인하세요.", records)
+            self.finished.emit(False, tr("다운로드된 파일이 없습니다. URL, 공개 여부, 쿠키 설정을 확인하세요."), records)
 
     def on_video_progress(self, data: dict[str, Any]) -> None:
         status = data.get("status")
@@ -291,12 +292,12 @@ class DownloadWorker(QObject):
             speed_text = f" · {speed / 1024 / 1024:.1f} MB/s" if speed else ""
             filename = data.get("filename")
             if filename:
-                self.log.emit(f"영상 다운로드 중: {Path(filename).name}{speed_text}")
+                self.log.emit(tr(f"영상 다운로드 중: {Path(filename).name}{speed_text}"))
         elif status == "finished":
             filename = data.get("filename")
             if filename:
                 self.saved_files.append(str(filename))
-                self.log.emit(f"영상 저장됨: {Path(filename).name}")
+                self.log.emit(tr(f"영상 저장됨: {Path(filename).name}"))
 
 
 class ThumbnailWorker(QObject):
@@ -361,7 +362,7 @@ class ThumbnailWorker(QObject):
                     if not thumbnail_url and isinstance(thumbnails, list) and thumbnails:
                         thumbnail_url = str(thumbnails[-1].get("url") or "")
             if not thumbnail_url:
-                self.finished.emit(self.url, False, None, title, "썸네일을 찾지 못했습니다.")
+                self.finished.emit(self.url, False, None, title, tr("썸네일을 찾지 못했습니다."))
                 return
             request = urllib.request.Request(thumbnail_url, headers={"User-Agent": USER_AGENT})
             response_source = (open_media_url(request, timeout=20, cookies=self.cookies) if self.cookies
@@ -486,8 +487,21 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(title, 0)
         layout.addWidget(center, 1)
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("한국어", "ko")
+        self.language_combo.addItem("English", "en")
+        self.language_combo.setCurrentIndex(1 if get_language() == "en" else 0)
+        self.language_combo.setToolTip("언어 / Language")
+        self.language_combo.setFixedWidth(112)
+        self.language_combo.currentIndexChanged.connect(self.change_language)
+        layout.addWidget(self.language_combo, 0)
         layout.addWidget(brand, 0)
         return bar
+
+    def change_language(self, index):
+        self.settings.setValue("language", self.language_combo.itemData(index))
+        self.settings.sync()
+        QMessageBox.information(self, APP_NAME, tr("다음 실행부터 선택한 언어가 적용됩니다."))
 
     def workspace(self) -> QFrame:
         frame = QFrame()
@@ -509,24 +523,24 @@ class MainWindow(QMainWindow):
         eyebrow.setObjectName("Eyebrow")
         title = QLabel("Media URLs")
         title.setObjectName("StageTitle")
-        hint = QLabel("Instagram · Behance 계정 연결은 OUTPUT에서 관리합니다.")
+        hint = QLabel(tr("Instagram · Behance 계정 연결은 OUTPUT에서 관리합니다."))
         hint.setObjectName("StageHint")
 
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("URL 하나 또는 여러 개를 붙여넣으세요.")
+        self.url_input.setPlaceholderText(tr("URL 하나 또는 여러 개를 붙여넣으세요."))
         self.url_input.returnPressed.connect(self.add_urls_from_input)
 
         action_row = QHBoxLayout()
-        self.add_queue_button = QPushButton("큐에 추가")
+        self.add_queue_button = QPushButton(tr("큐에 추가"))
         self.add_queue_button.clicked.connect(self.add_urls_from_input)
-        self.clipboard_button = QPushButton("클립보드 추가")
+        self.clipboard_button = QPushButton(tr("클립보드 추가"))
         self.clipboard_button.clicked.connect(self.add_urls_from_clipboard)
-        self.download_button = QPushButton("다운로드")
+        self.download_button = QPushButton(tr("다운로드"))
         self.download_button.setObjectName("PrimaryButton")
         self.download_button.clicked.connect(self.start_download)
-        self.open_folder_button = QPushButton("저장 폴더 열기")
+        self.open_folder_button = QPushButton(tr("저장 폴더 열기"))
         self.open_folder_button.clicked.connect(self.open_output)
-        self.open_last_button = QPushButton("최근 폴더 열기")
+        self.open_last_button = QPushButton(tr("최근 폴더 열기"))
         self.open_last_button.clicked.connect(self.open_last_output)
         action_row.setSpacing(8)
         action_row.addWidget(self.add_queue_button)
@@ -546,9 +560,9 @@ class MainWindow(QMainWindow):
 
         queue_actions = QHBoxLayout()
         queue_actions.setSpacing(8)
-        self.remove_queue_button = QPushButton("선택 제거")
+        self.remove_queue_button = QPushButton(tr("선택 제거"))
         self.remove_queue_button.clicked.connect(self.remove_selected_queue_items)
-        self.clear_queue_button = QPushButton("큐 비우기")
+        self.clear_queue_button = QPushButton(tr("큐 비우기"))
         self.clear_queue_button.clicked.connect(self.clear_queue)
         queue_actions.addWidget(self.remove_queue_button)
         queue_actions.addWidget(self.clear_queue_button)
@@ -581,12 +595,12 @@ class MainWindow(QMainWindow):
         self.log_output = QPlainTextEdit()
         self.log_output.setObjectName("LogOutput")
         self.log_output.setReadOnly(True)
-        self.log_output.setPlaceholderText("다운로드 진행 상황과 오류가 여기에 표시됩니다.")
+        self.log_output.setPlaceholderText(tr("다운로드 진행 상황과 오류가 여기에 표시됩니다."))
 
         history_header = QHBoxLayout()
         history_label = QLabel("HISTORY")
         history_label.setObjectName("Eyebrow")
-        self.clear_history_button = QPushButton("기록 지우기")
+        self.clear_history_button = QPushButton(tr("기록 지우기"))
         self.clear_history_button.clicked.connect(self.clear_history)
         history_header.addWidget(history_label)
         history_header.addStretch(1)
@@ -594,7 +608,7 @@ class MainWindow(QMainWindow):
 
         self.history_table = QTableWidget(0, 5)
         self.history_table.setObjectName("HistoryTable")
-        self.history_table.setHorizontalHeaderLabels(["시간", "플랫폼", "상태", "요약", "URL"])
+        self.history_table.setHorizontalHeaderLabels([tr("시간"), tr("플랫폼"), tr("상태"), tr("요약"), "URL"])
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -619,33 +633,33 @@ class MainWindow(QMainWindow):
         heading.setObjectName("Eyebrow")
         layout.addWidget(heading)
 
-        layout.addWidget(self.field_label("저장 폴더"))
+        layout.addWidget(self.field_label(tr("저장 폴더")))
         output_row = QHBoxLayout()
         self.output_input = QLineEdit(str(default_download_dir()))
-        browse_output = QPushButton("선택")
+        browse_output = QPushButton(tr("선택"))
         browse_output.clicked.connect(self.choose_output)
         output_row.addWidget(self.output_input, 1)
         output_row.addWidget(browse_output)
         layout.addLayout(output_row)
 
-        layout.addWidget(self.field_label("계정 연결"))
+        layout.addWidget(self.field_label(tr("계정 연결")))
         self.account_buttons = {}
         for service, (name, _, _) in SERVICES.items():
             row = QHBoxLayout()
-            button = QPushButton(name + " 연결")
+            button = QPushButton(name + tr(" 연결"))
             button.clicked.connect(lambda checked=False, key=service: self.connect_account(key))
-            remove = QPushButton("연결 해제")
+            remove = QPushButton(tr("연결 해제"))
             remove.clicked.connect(lambda checked=False, key=service: self.disconnect_account(key))
             row.addWidget(button, 1)
             row.addWidget(remove)
             layout.addLayout(row)
             self.account_buttons[service] = button
         self.refresh_accounts()
-        layout.addWidget(self.field_label("쿠키 파일 (선택 시 우선 적용)"))
+        layout.addWidget(self.field_label(tr("쿠키 파일 (선택 시 우선 적용)")))
         cookie_row = QHBoxLayout()
         self.cookies_input = QLineEdit()
         self.cookies_input.setPlaceholderText("cookies.txt")
-        browse_cookies = QPushButton("선택")
+        browse_cookies = QPushButton(tr("선택"))
         browse_cookies.clicked.connect(self.choose_cookies)
         cookie_row.addWidget(self.cookies_input, 1)
         cookie_row.addWidget(browse_cookies)
@@ -656,39 +670,39 @@ class MainWindow(QMainWindow):
         divider.setFixedHeight(1)
         layout.addWidget(divider)
 
-        layout.addWidget(self.field_label("저장 항목"))
-        self.video_check = QCheckBox("영상 저장")
+        layout.addWidget(self.field_label(tr("저장 항목")))
+        self.video_check = QCheckBox(tr("영상 저장"))
         self.video_check.setChecked(True)
-        self.image_check = QCheckBox("이미지 저장 (Instagram · Behance)")
+        self.image_check = QCheckBox(tr("이미지 저장 (Instagram · Behance)"))
         self.image_check.setChecked(True)
-        self.metadata_check = QCheckBox("설명과 정보 JSON 저장")
+        self.metadata_check = QCheckBox(tr("설명과 정보 JSON 저장"))
         layout.addWidget(self.video_check)
         layout.addWidget(self.image_check)
         layout.addWidget(self.metadata_check)
 
-        layout.addWidget(self.field_label("편의 기능"))
-        self.clipboard_check = QCheckBox("클립보드 URL 자동 감지")
+        layout.addWidget(self.field_label(tr("편의 기능")))
+        self.clipboard_check = QCheckBox(tr("클립보드 URL 자동 감지"))
         self.clipboard_check.setChecked(True)
-        self.platform_folder_check = QCheckBox("플랫폼/오늘 날짜 폴더로 저장")
+        self.platform_folder_check = QCheckBox(tr("플랫폼/오늘 날짜 폴더로 저장"))
         self.platform_folder_check.setChecked(True)
         layout.addWidget(self.clipboard_check)
         layout.addWidget(self.platform_folder_check)
 
-        layout.addWidget(self.field_label("영상 품질"))
+        layout.addWidget(self.field_label(tr("영상 품질")))
         self.quality_combo = QComboBox()
-        self.quality_combo.addItem("최고 화질 - 영상+음성 자동 병합", DEFAULT_VIDEO_FORMAT)
-        self.quality_combo.addItem("호환 우선 - MP4 단일 파일", COMPAT_VIDEO_FORMAT)
+        self.quality_combo.addItem(tr("최고 화질 - 영상+음성 자동 병합"), DEFAULT_VIDEO_FORMAT)
+        self.quality_combo.addItem(tr("호환 우선 - 없으면 자동 병합"), COMPAT_VIDEO_FORMAT)
         layout.addWidget(self.quality_combo)
 
-        info = QLabel("앱에 ffmpeg를 포함해 YouTube/Vimeo의 영상+음성 병합을 자동 처리합니다.")
+        info = QLabel(tr("앱에 ffmpeg를 포함해 YouTube/Vimeo의 영상+음성 병합을 자동 처리합니다."))
         info.setObjectName("FinePrint")
         info.setWordWrap(True)
         layout.addWidget(info)
 
-        self.update_button = QPushButton("업데이트 확인")
+        self.update_button = QPushButton(tr("업데이트 확인"))
         self.update_button.clicked.connect(self.check_updates)
         layout.addWidget(self.update_button)
-        self.diagnostics_button = QPushButton("진단 정보 복사")
+        self.diagnostics_button = QPushButton(tr("진단 정보 복사"))
         self.diagnostics_button.clicked.connect(self.open_diagnostics)
         layout.addWidget(self.diagnostics_button)
         layout.addStretch(1)
@@ -702,7 +716,7 @@ class MainWindow(QMainWindow):
 
     def open_diagnostics(self):
         if self.update_thread is not None:
-            QMessageBox.information(self, APP_NAME, "업데이트 작업이 끝난 뒤 진단 정보를 열어 주세요.")
+            QMessageBox.information(self, APP_NAME, tr("업데이트 작업이 끝난 뒤 진단 정보를 열어 주세요."))
             return
         from fetch_diagnostics import show_diagnostics
         saved = [service for service in SERVICES if SessionStore().path(service).exists()]
@@ -714,13 +728,13 @@ class MainWindow(QMainWindow):
             self.diagnostics_active = False
 
     def choose_output(self) -> None:
-        folder = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", self.output_input.text())
+        folder = QFileDialog.getExistingDirectory(self, tr("저장 폴더 선택"), self.output_input.text())
         if folder:
             self.output_input.setText(folder)
             self.save_settings()
 
     def choose_cookies(self) -> None:
-        file_name, _ = QFileDialog.getOpenFileName(self, "cookies.txt 선택", "", "Text files (*.txt);;All files (*)")
+        file_name, _ = QFileDialog.getOpenFileName(self, tr("cookies.txt 선택"), "", "Text files (*.txt);;All files (*)")
         if file_name:
             self.cookies_input.setText(file_name)
             self.save_settings()
@@ -729,8 +743,8 @@ class MainWindow(QMainWindow):
         store = SessionStore()
         for service, button in self.account_buttons.items():
             saved = store.path(service).exists()
-            button.setText(SERVICES[service][0] + (" · 저장됨" if saved else " 연결"))
-            button.setToolTip("저장 여부이며 로그인 유효성을 보장하지 않습니다. 만료되면 다시 연결하세요.")
+            button.setText(SERVICES[service][0] + (tr(" · 저장됨") if saved else tr(" 연결")))
+            button.setToolTip(tr("저장 여부이며 로그인 유효성을 보장하지 않습니다. 만료되면 다시 연결하세요."))
 
     def connect_account(self, service):
         try:
@@ -742,16 +756,16 @@ class MainWindow(QMainWindow):
             dialog.deleteLater()
             self.refresh_accounts()
         except Exception:
-            QMessageBox.warning(self, APP_NAME, "계정 연결 창을 열 수 없습니다. 최신 설치 파일로 다시 설치해 주세요.")
+            QMessageBox.warning(self, APP_NAME, tr("계정 연결 창을 열 수 없습니다. 최신 설치 파일로 다시 설치해 주세요."))
 
     def disconnect_account(self, service):
-        if QMessageBox.question(self, APP_NAME, "Fetch에 저장한 이 계정의 세션을 삭제할까요? 진행 중인 작업과 외부 브라우저의 로그인은 유지됩니다.") != QMessageBox.Yes:
+        if QMessageBox.question(self, APP_NAME, tr("Fetch에 저장한 이 계정의 세션을 삭제할까요? 진행 중인 작업과 외부 브라우저의 로그인은 유지됩니다.")) != QMessageBox.Yes:
             return
         try:
             SessionStore().remove(service)
             self.refresh_accounts()
         except Exception:
-            QMessageBox.warning(self, APP_NAME, "보안 저장소에 접근할 수 없어 연결을 해제하지 못했습니다.")
+            QMessageBox.warning(self, APP_NAME, tr("보안 저장소에 접근할 수 없어 연결을 해제하지 못했습니다."))
 
     def open_output(self) -> None:
         output_dir = Path(self.output_input.text()).expanduser().resolve()
@@ -766,20 +780,20 @@ class MainWindow(QMainWindow):
     def add_urls_from_input(self) -> None:
         urls = extract_urls(self.url_input.text())
         if not urls:
-            QMessageBox.warning(self, APP_NAME, "추가할 URL이 없습니다.")
+            QMessageBox.warning(self, APP_NAME, tr("추가할 URL이 없습니다."))
             return
         added = self.add_urls_to_queue(urls)
         self.url_input.clear()
-        self.append_log(f"큐에 {added}개 URL을 추가했습니다.")
+        self.append_log(tr(f"큐에 {added}개 URL을 추가했습니다."))
 
     def add_urls_from_clipboard(self) -> None:
         text = QApplication.clipboard().text()
         urls = extract_urls(text)
         if not urls:
-            QMessageBox.information(self, APP_NAME, "클립보드에서 URL을 찾지 못했습니다.")
+            QMessageBox.information(self, APP_NAME, tr("클립보드에서 URL을 찾지 못했습니다."))
             return
         added = self.add_urls_to_queue(urls)
-        self.append_log(f"클립보드에서 {added}개 URL을 추가했습니다.")
+        self.append_log(tr(f"클립보드에서 {added}개 URL을 추가했습니다."))
 
     def add_urls_to_queue(self, urls: list[str]) -> int:
         existing = set(self.all_queue_urls())
@@ -839,7 +853,7 @@ class MainWindow(QMainWindow):
             return
         added = self.add_urls_to_queue(urls)
         if added:
-            self.append_log(f"클립보드 URL 자동 추가: {added}개")
+            self.append_log(tr(f"클립보드 URL 자동 추가: {added}개"))
 
     def load_settings(self) -> None:
         self.output_input.setText(self.settings.value("output_dir", str(default_download_dir())))
@@ -893,7 +907,7 @@ class MainWindow(QMainWindow):
             values = [
                 record.get("time", ""),
                 record.get("platform", ""),
-                record.get("status", ""),
+                tr(record.get("status", "")),
                 record.get("summary", ""),
                 record.get("url", ""),
             ]
@@ -933,7 +947,7 @@ class MainWindow(QMainWindow):
             item = self.find_queue_item(url)
             if item is None:
                 continue
-            item.setText(f"{platform_name(url)}\n미리보기 불러오는 중...")
+            item.setText(tr(f"{platform_name(url)}\n미리보기 불러오는 중..."))
             item.setToolTip(url)
             self.fetch_thumbnail(url)
             return
@@ -977,9 +991,9 @@ class MainWindow(QMainWindow):
                 pixmap = QPixmap.fromImage(image)
                 item.setIcon(QIcon(pixmap.scaled(QSize(128, 72), Qt.KeepAspectRatio, Qt.SmoothTransformation)))
                 return
-        item.setText(f"{display_title}\n미리보기 없음 - {url}")
+        item.setText(tr(f"{display_title}\n미리보기 없음 - {url}"))
         if error:
-            self.append_log(f"미리보기 실패: {error}")
+            self.append_log(tr(f"미리보기 실패: {error}"))
 
     @Slot()
     def clear_thumbnail_worker(self) -> None:
@@ -990,7 +1004,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: object) -> None:
         if any(thread is not None for thread in (self.download_thread, self.thumbnail_thread, self.update_thread)):
             event.ignore()
-            self.status_label.setText("작업 완료 후 닫아 주세요")
+            self.status_label.setText(tr("작업 완료 후 닫아 주세요"))
             return
         self.save_settings()
         super().closeEvent(event)
@@ -1002,29 +1016,29 @@ class MainWindow(QMainWindow):
 
         urls = self.queued_urls()
         if not urls:
-            message = "다운로드할 URL을 큐에 추가하세요."
+            message = tr("다운로드할 URL을 큐에 추가하세요.")
             if self.queue_list.count():
-                message = "다운로드할 항목을 체크하세요."
+                message = tr("다운로드할 항목을 체크하세요.")
             QMessageBox.warning(self, APP_NAME, message)
             return
 
         if not self.video_check.isChecked() and not self.image_check.isChecked():
-            QMessageBox.warning(self, APP_NAME, "저장할 항목을 하나 이상 선택하세요.")
+            QMessageBox.warning(self, APP_NAME, tr("저장할 항목을 하나 이상 선택하세요."))
             return
 
         self.save_settings()
         output_dir = Path(self.output_input.text()).expanduser().resolve()
         cookies = Path(self.cookies_input.text()).expanduser().resolve() if self.cookies_input.text().strip() else None
         if cookies and not cookies.exists():
-            QMessageBox.warning(self, APP_NAME, "쿠키 파일을 찾을 수 없습니다.")
+            QMessageBox.warning(self, APP_NAME, tr("쿠키 파일을 찾을 수 없습니다."))
             return
 
         self.log_output.clear()
         self.progress.setValue(0)
         self.status_label.setText("Running")
         self.set_busy(True)
-        self.append_log(f"다운로드를 시작합니다. 큐: {len(urls)}개")
-        self.append_log(f"저장 폴더: {output_dir}")
+        self.append_log(tr(f"다운로드를 시작합니다. 큐: {len(urls)}개"))
+        self.append_log(tr(f"저장 폴더: {output_dir}"))
         self.last_output_dir = output_dir
 
         self.download_thread = QThread()
@@ -1060,7 +1074,7 @@ class MainWindow(QMainWindow):
         self.silent_update_check = silent
         self.status_label.setText("Checking")
         self.update_button.setEnabled(False)
-        self.append_log(f"업데이트 확인 중... 현재 버전 {APP_VERSION}")
+        self.append_log(tr(f"업데이트 확인 중... 현재 버전 {APP_VERSION}"))
 
         self.update_thread = QThread()
         self.update_worker = UpdateCheckWorker()
@@ -1079,24 +1093,24 @@ class MainWindow(QMainWindow):
         self.update_button.setEnabled(True)
         if not ok:
             if not self.silent_update_check:
-                QMessageBox.warning(self, APP_NAME, f"업데이트 확인에 실패했습니다.\n\n{error}")
-            self.append_log(f"업데이트 확인 실패: {error}")
+                QMessageBox.warning(self, APP_NAME, tr(f"업데이트 확인에 실패했습니다.\n\n{error}"))
+            self.append_log(tr(f"업데이트 확인 실패: {error}"))
             return
         if update is None:
             if not self.silent_update_check:
-                QMessageBox.information(self, APP_NAME, f"최신 버전입니다. ({APP_VERSION})")
-            self.append_log("최신 버전입니다.")
+                QMessageBox.information(self, APP_NAME, tr(f"최신 버전입니다. ({APP_VERSION})"))
+            self.append_log(tr("최신 버전입니다."))
             return
 
         if self.download_thread is not None:
-            self.append_log("다운로드가 끝난 뒤 업데이트를 다시 확인해 주세요.")
+            self.append_log(tr("다운로드가 끝난 뒤 업데이트를 다시 확인해 주세요."))
             return
         assert isinstance(update, UpdateInfo)
-        self.append_log(f"새 버전 발견: {update.version}")
+        self.append_log(tr(f"새 버전 발견: {update.version}"))
         answer = QMessageBox.question(
             self,
             APP_NAME,
-            f"새 버전 {update.version}이 있습니다.\n\n설치 파일을 내려받고 업데이트할까요?",
+            tr(f"새 버전 {update.version}이 있습니다.\n\n설치 파일을 내려받고 업데이트할까요?"),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
@@ -1112,7 +1126,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Updating")
         self.progress.setValue(0)
         self.set_busy(True)
-        self.append_log(f"업데이트 다운로드 중: {update.asset_name}")
+        self.append_log(tr(f"업데이트 다운로드 중: {update.asset_name}"))
 
         self.update_thread = QThread()
         self.update_worker = UpdateDownloadWorker(update)
@@ -1131,8 +1145,8 @@ class MainWindow(QMainWindow):
         self.set_busy(False)
         if not ok:
             self.status_label.setText("Error")
-            QMessageBox.critical(self, APP_NAME, f"업데이트 다운로드에 실패했습니다.\n\n{error}")
-            self.append_log(f"업데이트 다운로드 실패: {error}")
+            QMessageBox.critical(self, APP_NAME, tr(f"업데이트 다운로드에 실패했습니다.\n\n{error}"))
+            self.append_log(tr(f"업데이트 다운로드 실패: {error}"))
             return
 
         self.pending_installer = Path(installer)
@@ -1153,10 +1167,10 @@ class MainWindow(QMainWindow):
                 subprocess.run(["/usr/bin/open", str(installer_path)], check=True)
             except (OSError, subprocess.CalledProcessError) as exc:
                 self.clipboard_timer.start(1500)
-                QMessageBox.critical(self, APP_NAME, f"업데이트 파일을 열 수 없습니다.\n{exc}")
+                QMessageBox.critical(self, APP_NAME, tr(f"업데이트 파일을 열 수 없습니다.\n{exc}"))
                 return
             QMessageBox.information(self, APP_NAME,
-                "업데이트 파일을 열었습니다. Fetch가 종료되면 새 Fetch를 응용 프로그램 폴더로 옮겨 기존 앱을 교체해 주세요.")
+                tr("업데이트 파일을 열었습니다. Fetch가 종료되면 새 Fetch를 응용 프로그램 폴더로 옮겨 기존 앱을 교체해 주세요."))
             QApplication.quit()
             return
         install_dir = Path(__file__).resolve().parent.parent
@@ -1169,7 +1183,7 @@ class MainWindow(QMainWindow):
             )
         except OSError as exc:
             self.clipboard_timer.start(1500)
-            QMessageBox.critical(self, APP_NAME, f"업데이트 설치를 시작할 수 없습니다.\n{exc}")
+            QMessageBox.critical(self, APP_NAME, tr(f"업데이트 설치를 시작할 수 없습니다.\n{exc}"))
             return
         QApplication.quit()
 
@@ -1187,7 +1201,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def append_log(self, message: str) -> None:
-        self.log_output.appendPlainText(message)
+        self.log_output.appendPlainText(tr(message))
 
     @Slot(bool, str, object)
     def download_finished(self, ok: bool, message: str, records: object) -> None:
@@ -1202,7 +1216,7 @@ class MainWindow(QMainWindow):
             answer = QMessageBox.question(
                 self,
                 APP_NAME,
-                f"{message}\n\n저장 폴더를 열까요?",
+                tr(f"{message}\n\n저장 폴더를 열까요?"),
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes,
             )
@@ -1234,7 +1248,7 @@ class MainWindow(QMainWindow):
         ]
         for control in controls:
             control.setEnabled(not busy)
-        self.download_button.setText("다운로드 중..." if busy else "다운로드")
+        self.download_button.setText(tr("다운로드 중...") if busy else tr("다운로드"))
 
     def apply_styles(self) -> None:
         font_stack = f'"{self.font_family}", "Pretendard", "Segoe UI", "Malgun Gothic", sans-serif'
@@ -1474,8 +1488,15 @@ def main() -> int:
         return 0
 
     app = QApplication(sys.argv)
+    language = QSettings("KALLOS", APP_NAME).value("language", "ko")
+    if "--language" in sys.argv:
+        language = sys.argv[sys.argv.index("--language") + 1]
+    set_language(language)
     app.setWindowIcon(QIcon(str(resource_path("assets/fetch.ico"))))
     font_family = load_pretendard(app)
+    if "--account-smoke-test" in sys.argv:
+        from account_dialog import browser_self_test
+        return browser_self_test(app, Path(sys.argv[sys.argv.index("--account-smoke-test") + 1]))
     window = MainWindow(font_family)
     window.show()
     if "--interaction-test" in sys.argv:

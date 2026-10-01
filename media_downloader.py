@@ -25,7 +25,7 @@ except Exception:  # pragma: no cover - optional runtime helper
 
 DEFAULT_TEMPLATE = "%(title|media)s_%(id)s.%(ext)s"
 DEFAULT_VIDEO_FORMAT = "bv*+ba/b"
-COMPAT_VIDEO_FORMAT = "best[ext=mp4]/best"
+COMPAT_VIDEO_FORMAT = "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]/bv*[vcodec!=none]+ba"
 INSTAGRAM_VIDEO_FORMAT = "best/best[ext=mp4]/bv*+ba/b"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

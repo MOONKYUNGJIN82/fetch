@@ -1,5 +1,6 @@
 """Explicit, user-controlled service login in an ephemeral browser profile."""
 import http.cookiejar
+from localization import tr
 
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox, QFileDialog
@@ -8,11 +9,11 @@ from account_sessions import SERVICES, SessionStore
 
 
 class AccountDialog(QDialog):
-    def __init__(self, service, parent=None):
+    def __init__(self, service, parent=None, test_mode=False):
         super().__init__(parent)
         self.service = service
         self.store = SessionStore()
-        self.setWindowTitle(SERVICES[service][0] + " 계정 연결")
+        self.setWindowTitle(SERVICES[service][0] + tr(" 계정 연결"))
         self.resize(920, 720)
         self.setMinimumSize(560, 480)
         layout = QVBoxLayout(self)
@@ -32,18 +33,21 @@ class AccountDialog(QDialog):
         self.view.urlChanged.connect(self.show_address)
         layout.addWidget(self.view, 1)
         row = QHBoxLayout()
-        import_button = QPushButton("쿠키 가져오기")
+        import_button = QPushButton(tr("쿠키 가져오기"))
         import_button.clicked.connect(self.import_cookies)
-        save = QPushButton("로그인 완료 · 연결 저장")
+        save = QPushButton(tr("로그인 완료 · 연결 저장"))
         save.clicked.connect(self.save_session)
-        cancel = QPushButton("취소")
+        cancel = QPushButton(tr("취소"))
         cancel.clicked.connect(self.reject)
         row.addWidget(import_button)
         row.addStretch()
         row.addWidget(cancel)
         row.addWidget(save)
         layout.addLayout(row)
-        self.view.load(QUrl(SERVICES[service][2]))
+        if test_mode:
+            self.view.setHtml('<html><head><title>Fetch browser test</title></head><body><h1>Fetch account browser</h1></body></html>')
+        else:
+            self.view.load(QUrl(SERVICES[service][2]))
 
     def show_address(self, url):
         display = QUrl(url)
@@ -63,7 +67,7 @@ class AccountDialog(QDialog):
                 bytes(c.name()) == b"sessionid" and
                 c.domain().lstrip(".") in ("instagram.com", "www.instagram.com")
                 for c in self.cookies.values()):
-            QMessageBox.warning(self, "로그인 확인", "Instagram 로그인을 먼저 완료해 주세요.")
+            QMessageBox.warning(self, tr("로그인 확인"), tr("Instagram 로그인을 먼저 완료해 주세요."))
             return
         jar = http.cookiejar.CookieJar()
         for cookie in self.cookies.values():
@@ -77,18 +81,18 @@ class AccountDialog(QDialog):
         try:
             self.store.save(self.service, jar)
         except Exception:
-            QMessageBox.warning(self, "연결 저장 실패", "로그인 완료 여부와 보안 저장소 접근 권한을 확인해 주세요. 연결되지 않으면 본인 브라우저의 쿠키 파일을 가져올 수 있습니다.")
+            QMessageBox.warning(self, tr("연결 저장 실패"), tr("로그인 완료 여부와 보안 저장소 접근 권한을 확인해 주세요. 연결되지 않으면 본인 브라우저의 쿠키 파일을 가져올 수 있습니다."))
             return
         self.accept()
 
     def import_cookies(self):
-        path, _ = QFileDialog.getOpenFileName(self, "본인 계정 쿠키 가져오기", "", "Cookies (*.txt)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("본인 계정 쿠키 가져오기"), "", "Cookies (*.txt)")
         if not path:
             return
         try:
             self.store.import_file(self.service, path)
         except Exception:
-            QMessageBox.warning(self, "가져오기 실패", "유효한 Netscape 쿠키 파일과 보안 저장소 접근 권한을 확인해 주세요.")
+            QMessageBox.warning(self, tr("가져오기 실패"), tr("유효한 Netscape 쿠키 파일과 보안 저장소 접근 권한을 확인해 주세요."))
             return
         self.accept()
 
@@ -99,3 +103,36 @@ class AccountDialog(QDialog):
         self.page.deleteLater()
         self.page.destroyed.connect(self.profile.deleteLater)
         super().done(result)
+
+
+def browser_self_test(app, destination):
+    from PySide6.QtCore import QTimer
+    from PySide6.QtNetwork import QNetworkCookie
+    dialog = AccountDialog('instagram', test_mode=True)
+    app.setQuitOnLastWindowClosed(False)
+    done = False
+
+    def finish(ok):
+        nonlocal done
+        if done:
+            return
+        done = True
+        if ok:
+            cookie = QNetworkCookie(b'fetch_test', b'synthetic')
+            cookie.setDomain('.instagram.com')
+            cookie.setPath('/')
+            dialog.cookie_added(cookie)
+            ok = bool(dialog.cookies) and dialog.profile.isOffTheRecord() and dialog.grab().save(str(destination))
+        dialog.reject()
+        QTimer.singleShot(500, lambda: app.exit(0 if ok else 1))
+
+    def loaded(ok):
+        if not ok:
+            finish(False)
+            return
+        dialog.page.runJavaScript('document.title', lambda title: finish(title == 'Fetch browser test'))
+
+    dialog.view.loadFinished.connect(loaded)
+    QTimer.singleShot(30000, lambda: finish(False))
+    dialog.show()
+    return app.exec()

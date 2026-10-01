@@ -71,6 +71,8 @@ def build():
     executable = app / 'Contents/MacOS/Fetch'
     run(executable, '--self-test')
     run(executable, '--smoke-test', work / 'Fetch-ui.png')
+    run(executable, '--language', 'en', '--smoke-test', work / 'Fetch-ui-en.png')
+    run(executable, '--account-smoke-test', work / 'Fetch-account.png')
     run(executable, '--interaction-test',
         'https://www.youtube.com/watch?v=lO3lG-qXU14&list=RDlO3lG-qXU14&start_radio=1',
         work / 'Fetch-preview.png')
@@ -120,7 +122,8 @@ def build():
     report = {'version': APP_VERSION, 'arch': arch, 'os': platform.mac_ver()[0],
               'self_test': True, 'relocated_self_test': True, 'ui_render': True,
               'developer_id_signed': signed,
-              'notarized': signed, 'clipboard_preview_test': True, 'sha256': checksum}
+              'notarized': signed, 'clipboard_preview_test': True, 'account_browser_test': True,
+              'english_ui_test': True, 'sha256': checksum}
     (output / f'verification-{arch}.json').write_text(json.dumps(report, indent=2))
 
 if __name__ == '__main__':
