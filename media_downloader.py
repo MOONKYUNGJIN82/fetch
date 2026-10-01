@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import http.cookiejar
+from account_sessions import apply_session
 import re
 import sys
 import urllib.parse
@@ -92,6 +93,10 @@ def sanitize_filename(value: str, fallback: str = "download") -> str:
 def open_media_url(request, timeout: int, cookies: Path | None = None):
     if cookies is None:
         return urllib.request.urlopen(request, timeout=timeout, context=tls_context())
+    if isinstance(cookies, http.cookiejar.CookieJar):
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=tls_context()), urllib.request.HTTPCookieProcessor(cookies))
+        return opener.open(request, timeout=timeout)
     jar = http.cookiejar.MozillaCookieJar(str(cookies))
     try:
         jar.load(ignore_discard=True, ignore_expires=False)
@@ -363,7 +368,7 @@ def build_ydl_options(
             pass
     if progress_hook:
         options["progress_hooks"] = [progress_hook]
-    if cookies:
+    if cookies and not isinstance(cookies, http.cookiejar.CookieJar):
         options["cookiefile"] = str(cookies)
     if write_metadata:
         options["writedescription"] = True
@@ -402,6 +407,7 @@ def download_urls(
             )
             try:
                 with YoutubeDL(options) as ydl:
+                    apply_session(ydl, cookies)
                     url_result = download_instagram(ydl, url, output_dir, include_videos, include_images, logger)
             except Exception as exc:
                 url_result.errors.append(f"Instagram extraction failed: {exc}")
@@ -418,6 +424,7 @@ def download_urls(
                                                     allow_multiple, quiet, logger, progress_hook)
                         try:
                             with YoutubeDL(options) as ydl:
+                                apply_session(ydl, cookies)
                                 info = ydl.extract_info(url, download=True)
                             if info:
                                 url_result.videos += 1
@@ -443,6 +450,7 @@ def download_urls(
             )
             try:
                 with YoutubeDL(options) as ydl:
+                    apply_session(ydl, cookies)
                     ydl.download([url])
                 url_result.videos += 1
             except DownloadError as exc:

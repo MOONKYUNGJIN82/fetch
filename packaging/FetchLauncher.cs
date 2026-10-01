@@ -6,7 +6,7 @@ using System.Reflection;
 [assembly: AssemblyTitle("Fetch")]
 [assembly: AssemblyProduct("Fetch")]
 [assembly: AssemblyCompany("KALLOS")]
-[assembly: AssemblyVersion("1.6.2.0")]
+[assembly: AssemblyVersion("1.6.4.0")]
 class FetchLauncher {
     [STAThread] static int Main(string[] args) {
         string root = AppDomain.CurrentDomain.BaseDirectory;

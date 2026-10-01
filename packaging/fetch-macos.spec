@@ -5,12 +5,13 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 root = Path(SPECPATH).parent
 datas, binaries, hiddenimports = collect_all('yt_dlp')
+hiddenimports += ['keyring.backends.macOS']
 datas += collect_data_files('yt_dlp_ejs')
 datas += [(str(root / 'assets'), 'assets')]
 binaries += [(str(root / 'build/macos/deno'), 'runtime')]
 a = Analysis([str(root / 'instagram_downloader_ui.py')], pathex=[str(root)],
     binaries=binaries, datas=datas, hiddenimports=hiddenimports,
-    excludes=['tkinter', 'PySide6.QtQml', 'PySide6.QtQuick'], noarchive=False)
+    excludes=['tkinter'], noarchive=False)
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='Fetch',
     console=False, debug=False, strip=False, upx=False,

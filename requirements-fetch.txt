@@ -1,4 +1,7 @@
 yt-dlp[default,curl-cffi]==2026.8.19
 PySide6-Essentials==6.10.0
+PySide6-Addons==6.10.0
+keyring==25.7.0
+cryptography==46.0.7
 imageio-ffmpeg==0.6.0
 certifi==2026.07.22

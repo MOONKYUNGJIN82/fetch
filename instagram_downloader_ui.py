@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import http.cookiejar
 import os
 import re
 import subprocess
@@ -49,10 +50,12 @@ from media_downloader import (
     is_behance_url,
     is_instagram_url,
     extract_instagram_info,
+    open_media_url,
 )
 from update_manager import UpdateInfo, check_for_update, download_installer
 from yt_dlp import YoutubeDL
 from network_support import tls_context
+from account_sessions import cookies_for_url, apply_session, SessionStore, SERVICES
 
 
 BEST_VIDEO_FORMAT = "bv*+ba/b"
@@ -210,11 +213,22 @@ class DownloadWorker(QObject):
                 write_source_url(target_dir, url)
                 self.log.emit(f"[{index}/{total}] {platform}: {url}")
                 self.log.emit(f"저장 위치: {target_dir}")
+                try:
+                    active_cookies = cookies_for_url(url, self.cookies)
+                except Exception:
+                    message = "저장된 계정 세션을 열 수 없거나 만료됐습니다. 계정을 다시 연결하거나 연결 해제 후 시도해 주세요."
+                    errors.append(f"{platform}: {message}")
+                    records.append({"time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "platform": platform, "url": url, "folder": str(target_dir),
+                                    "summary": message, "status": "실패"})
+                    self.log.emit(message)
+                    self.progress.emit(int(index * 100 / max(total, 1)))
+                    continue
                 result = download_urls(
                     [url],
                     target_dir,
                     format_selector=self.format_selector,
-                    cookies=self.cookies,
+                    cookies=active_cookies,
                     write_metadata=self.write_metadata,
                     allow_multiple=False,
                     include_videos=self.include_videos,
@@ -238,7 +252,7 @@ class DownloadWorker(QObject):
                     )
                     self.log.emit(f"완료: {result.summary()}")
                 else:
-                    error_text = "\n".join(friendly_error(error, platform, bool(self.cookies)) for error in result.errors) if result.errors else "다운로드된 파일이 없습니다."
+                    error_text = "\n".join(friendly_error(error, platform, bool(active_cookies)) for error in result.errors) if result.errors else "다운로드된 파일이 없습니다."
                     errors.append(f"{platform}: {error_text}")
                     records.append(
                         {
@@ -297,6 +311,7 @@ class ThumbnailWorker(QObject):
     def run(self) -> None:
         try:
             title = platform_name(self.url)
+            self.cookies = cookies_for_url(self.url, self.cookies)
             thumbnail_url = ""
             parsed = urllib.parse.urlparse(self.url)
             video_id = ""
@@ -332,9 +347,10 @@ class ThumbnailWorker(QObject):
                     "ignore_no_formats_error": True,
                     "http_headers": {"User-Agent": USER_AGENT},
                 }
-                if self.cookies:
+                if self.cookies and not isinstance(self.cookies, http.cookiejar.CookieJar):
                     options["cookiefile"] = str(self.cookies)
                 with YoutubeDL(options) as ydl:
+                    apply_session(ydl, self.cookies)
                     info = extract_instagram_info(ydl, self.url) if is_instagram_url(self.url) else ydl.extract_info(self.url, download=False)
                     if isinstance(info, dict) and info.get("_type") == "playlist":
                         info = next((entry for entry in info.get("entries", []) if entry), info)
@@ -348,7 +364,9 @@ class ThumbnailWorker(QObject):
                 self.finished.emit(self.url, False, None, title, "썸네일을 찾지 못했습니다.")
                 return
             request = urllib.request.Request(thumbnail_url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=20, context=tls_context()) as response:
+            response_source = (open_media_url(request, timeout=20, cookies=self.cookies) if self.cookies
+                               else urllib.request.urlopen(request, timeout=20, context=tls_context()))
+            with response_source as response:
                 data = response.read(4 * 1024 * 1024)
             self.finished.emit(self.url, True, data, title, "")
         except Exception as exc:
@@ -388,6 +406,7 @@ class MainWindow(QMainWindow):
     def __init__(self, font_family: str) -> None:
         super().__init__()
         self.font_family = font_family
+        self.diagnostics_active = False
         self.download_thread: QThread | None = None
         self.worker: DownloadWorker | None = None
         self.update_thread: QThread | None = None
@@ -490,7 +509,7 @@ class MainWindow(QMainWindow):
         eyebrow.setObjectName("Eyebrow")
         title = QLabel("Media URLs")
         title.setObjectName("StageTitle")
-        hint = QLabel("공개 콘텐츠는 바로 저장하고, 로그인 필요한 콘텐츠는 cookies.txt를 선택하세요.")
+        hint = QLabel("Instagram · Behance 계정 연결은 OUTPUT에서 관리합니다.")
         hint.setObjectName("StageHint")
 
         self.url_input = QLineEdit()
@@ -609,7 +628,20 @@ class MainWindow(QMainWindow):
         output_row.addWidget(browse_output)
         layout.addLayout(output_row)
 
-        layout.addWidget(self.field_label("로그인 쿠키"))
+        layout.addWidget(self.field_label("계정 연결"))
+        self.account_buttons = {}
+        for service, (name, _, _) in SERVICES.items():
+            row = QHBoxLayout()
+            button = QPushButton(name + " 연결")
+            button.clicked.connect(lambda checked=False, key=service: self.connect_account(key))
+            remove = QPushButton("연결 해제")
+            remove.clicked.connect(lambda checked=False, key=service: self.disconnect_account(key))
+            row.addWidget(button, 1)
+            row.addWidget(remove)
+            layout.addLayout(row)
+            self.account_buttons[service] = button
+        self.refresh_accounts()
+        layout.addWidget(self.field_label("쿠키 파일 (선택 시 우선 적용)"))
         cookie_row = QHBoxLayout()
         self.cookies_input = QLineEdit()
         self.cookies_input.setPlaceholderText("cookies.txt")
@@ -656,6 +688,9 @@ class MainWindow(QMainWindow):
         self.update_button = QPushButton("업데이트 확인")
         self.update_button.clicked.connect(self.check_updates)
         layout.addWidget(self.update_button)
+        self.diagnostics_button = QPushButton("진단 정보 복사")
+        self.diagnostics_button.clicked.connect(self.open_diagnostics)
+        layout.addWidget(self.diagnostics_button)
         layout.addStretch(1)
 
         return panel
@@ -664,6 +699,19 @@ class MainWindow(QMainWindow):
         label = QLabel(text)
         label.setObjectName("FieldLabel")
         return label
+
+    def open_diagnostics(self):
+        if self.update_thread is not None:
+            QMessageBox.information(self, APP_NAME, "업데이트 작업이 끝난 뒤 진단 정보를 열어 주세요.")
+            return
+        from fetch_diagnostics import show_diagnostics
+        saved = [service for service in SERVICES if SessionStore().path(service).exists()]
+        self.diagnostics_active = True
+        try:
+            show_diagnostics(self, self.output_input.text(), self.log_output.toPlainText(),
+                             saved, bool(self.cookies_input.text().strip()))
+        finally:
+            self.diagnostics_active = False
 
     def choose_output(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", self.output_input.text())
@@ -676,6 +724,34 @@ class MainWindow(QMainWindow):
         if file_name:
             self.cookies_input.setText(file_name)
             self.save_settings()
+
+    def refresh_accounts(self):
+        store = SessionStore()
+        for service, button in self.account_buttons.items():
+            saved = store.path(service).exists()
+            button.setText(SERVICES[service][0] + (" · 저장됨" if saved else " 연결"))
+            button.setToolTip("저장 여부이며 로그인 유효성을 보장하지 않습니다. 만료되면 다시 연결하세요.")
+
+    def connect_account(self, service):
+        try:
+            from account_dialog import AccountDialog
+            dialog = AccountDialog(service, self)
+            if dialog.exec():
+                self.cookies_input.clear()
+                self.save_settings()
+            dialog.deleteLater()
+            self.refresh_accounts()
+        except Exception:
+            QMessageBox.warning(self, APP_NAME, "계정 연결 창을 열 수 없습니다. 최신 설치 파일로 다시 설치해 주세요.")
+
+    def disconnect_account(self, service):
+        if QMessageBox.question(self, APP_NAME, "Fetch에 저장한 이 계정의 세션을 삭제할까요? 진행 중인 작업과 외부 브라우저의 로그인은 유지됩니다.") != QMessageBox.Yes:
+            return
+        try:
+            SessionStore().remove(service)
+            self.refresh_accounts()
+        except Exception:
+            QMessageBox.warning(self, APP_NAME, "보안 저장소에 접근할 수 없어 연결을 해제하지 못했습니다.")
 
     def open_output(self) -> None:
         output_dir = Path(self.output_input.text()).expanduser().resolve()
@@ -979,7 +1055,7 @@ class MainWindow(QMainWindow):
         self.worker = None
 
     def check_updates(self, silent: bool = False) -> None:
-        if self.update_thread is not None or self.download_thread is not None:
+        if self.diagnostics_active or self.update_thread is not None or self.download_thread is not None:
             return
         self.silent_update_check = silent
         self.status_label.setText("Checking")
@@ -1365,6 +1441,7 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     if "--self-test" in sys.argv:
         required_assets = [
             resource_path("assets/fetch.ico"),
