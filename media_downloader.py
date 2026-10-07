@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import http.cookiejar
 from account_sessions import apply_session
 import re
 import sys
 import urllib.parse
 import urllib.request
+import urllib.error
+from html.parser import HTMLParser
 from network_support import tls_context
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -111,8 +114,40 @@ def open_media_url(request, timeout: int, cookies: Path | None = None):
 
 def fetch_text(url: str, cookies: Path | None = None) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with open_media_url(request, timeout=30, cookies=cookies) as response:
-        return response.read().decode("utf-8", errors="replace")
+    try:
+        with open_media_url(request, timeout=30, cookies=cookies) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        from behance_browser import render_project, valid_project
+        if exc.code != 403 or not valid_project(url):
+            raise
+        return render_project(url, cookies)
+
+
+class BehanceVideos(list):
+    """Keep embedded players alongside direct video files without breaking callers."""
+    def __init__(self, values=(), embeds=()):
+        super().__init__(values)
+        self.embeds = list(embeds)
+
+
+class BehanceEmbeds(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.urls = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != 'iframe':
+            return
+        url = dict(attrs).get('src', '')
+        if url.startswith('//'):
+            url = 'https:' + url
+        parsed = urllib.parse.urlparse(url)
+        if (parsed.scheme == 'https' and parsed.hostname in (
+                'www-ccv.adobe.io', 'player.vimeo.com', 'www.youtube.com',
+                'www.youtube-nocookie.com') and not parsed.username and not parsed.password
+                and url not in self.urls):
+            self.urls.append(url)
 
 
 def normalize_page_text(page: str) -> str:
@@ -183,7 +218,9 @@ def extract_behance_media(url: str, log: LogCallback | None = None, cookies: Pat
             if previous is None or media_score(cleaned) > media_score(previous):
                 videos[key] = cleaned
 
-    return list(images.values()), list(videos.values())
+    embeds = BehanceEmbeds()
+    embeds.feed(page)
+    return list(images.values()), BehanceVideos(videos.values(), embeds.urls)
 
 
 def is_instagram_url(url: str) -> bool:
@@ -418,20 +455,27 @@ def download_urls(
                     url_result.images += download_direct_files(images, output_dir, "image", logger, progress, cookies, url_result.errors)
                 if include_videos:
                     url_result.videos += download_direct_files(direct_videos, output_dir, "video", logger, progress, cookies, url_result.errors)
-                    if not direct_videos:
+                    embedded_urls = getattr(direct_videos, 'embeds', [])
+                    if embedded_urls or not direct_videos:
                         # Let yt-dlp resolve embedded players only after page access succeeds.
                         options = build_ydl_options(output_dir, format_selector, cookies, write_metadata,
                                                     allow_multiple, quiet, logger, progress_hook)
-                        try:
-                            with YoutubeDL(options) as ydl:
-                                apply_session(ydl, cookies)
-                                info = ydl.extract_info(url, download=True)
-                            if info:
-                                url_result.videos += 1
-                        except Exception as exc:
-                            logger(f"Behance embedded video: {exc}")
-                            if not url_result.images:
-                                url_result.errors.append(f"Behance video: {exc}")
+                        for embedded_url in embedded_urls or [url]:
+                            try:
+                                player_options = dict(options)
+                                if embedded_urls:
+                                    project_id = sanitize_filename(urllib.parse.urlparse(url).path.split('/')[2])
+                                    player_id = hashlib.sha256(embedded_url.encode()).hexdigest()[:12]
+                                    player_options['outtmpl'] = str(output_dir / (project_id + '_' + player_id + '_' + DEFAULT_TEMPLATE))
+                                with YoutubeDL(player_options) as ydl:
+                                    apply_session(ydl, cookies)
+                                    info = ydl.extract_info(embedded_url, download=True)
+                                if info:
+                                    url_result.videos += 1
+                            except Exception as exc:
+                                logger(f"Behance embedded video: {exc}")
+                                if embedded_urls or not url_result.images:
+                                    url_result.errors.append(f"Behance video: {exc}")
                 if not url_result.images and not url_result.videos and not url_result.errors:
                     url_result.errors.append("Behance: 선택한 종류의 미디어를 찾지 못했습니다.")
             except Exception as exc:

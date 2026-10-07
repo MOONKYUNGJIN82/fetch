@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 APP_NAME = "Fetch"
-APP_VERSION = "1.6.5"
+APP_VERSION = "1.6.6"
 PUBLISHER = "KALLOS"
 
 # GitHub Releases source used by the in-app updater.

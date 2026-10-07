@@ -52,7 +52,7 @@ def build():
         raise RuntimeError("A virtual environment is not a standalone runtime")
     app = PAYLOAD / "app"
     app.mkdir(exist_ok=True)
-    for name in ("app_config.py", "instagram_downloader_ui.py", "media_downloader.py", "update_manager.py", "network_support.py", "account_sessions.py", "account_dialog.py", "fetch_diagnostics.py", "localization.py"):
+    for name in ("app_config.py", "instagram_downloader_ui.py", "media_downloader.py", "update_manager.py", "network_support.py", "account_sessions.py", "account_dialog.py", "fetch_diagnostics.py", "localization.py", "behance_browser.py"):
         shutil.copy2(ROOT / name, app / name)
     shutil.copytree(ROOT / "assets", app / "assets", dirs_exist_ok=True)
     shutil.copy2(ROOT / "assets/fetch.ico", PAYLOAD / "Fetch.ico")

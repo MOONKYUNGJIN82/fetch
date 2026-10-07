@@ -1456,6 +1456,9 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+    if "--behance-browser" in sys.argv:
+        from behance_browser import browser_main
+        return browser_main()
     if "--self-test" in sys.argv:
         required_assets = [
             resource_path("assets/fetch.ico"),
